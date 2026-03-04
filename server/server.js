@@ -6,19 +6,21 @@ require("dotenv").config();
 const app = express();
 
 // Middleware
-app.use(cors());
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN || "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // MongoDB Connection
 const mongoURI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/houseRentDB";
 
-mongoose.connect(mongoURI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => console.log("✅ MongoDB Connected Successfully"))
-.catch(err => console.log("❌ MongoDB Connection Error:", err));
+mongoose.connect(mongoURI)
+    .then(() => console.log("✅ MongoDB Connected Successfully"))
+    .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
 // Import Routes
 const houseRoutes = require("./routes/houseRoutes");
@@ -36,7 +38,7 @@ app.use("/api/owner", ownerRoutes);
 
 // Basic Route
 app.get("/", (req, res) => {
-    res.json({ 
+    res.json({
         message: "🏠 House Rent API is running successfully!",
         version: "2.0 (Advanced Features)",
         endpoints: {
@@ -65,10 +67,10 @@ app.use((req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).json({ 
+    res.status(500).json({
         success: false,
-        message: "Server Error", 
-        error: err.message 
+        message: "Server Error",
+        error: err.message
     });
 });
 
