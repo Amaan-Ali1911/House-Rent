@@ -21,13 +21,36 @@ const S = {
       confirmed: { bg: 'rgba(21,128,61,0.1)', color: '#15803D' },
       rejected: { bg: 'rgba(185,28,28,0.1)', color: '#B91C1C' },
       completed: { bg: 'rgba(59,130,246,0.1)', color: '#2563EB' },
+      cancellation_requested: { bg: 'rgba(234,88,12,0.15)', color: '#EA580C' },
+      cancelled: { bg: 'rgba(107,114,128,0.1)', color: '#6B7280' },
+    };
+    const c = colors[status] || colors.pending;
+    return { display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700, background: c.bg, color: c.color };
+  },
+  payBadge: (status) => {
+    const colors = {
+      pending: { bg: 'rgba(180,83,9,0.1)', color: '#B45309' },
+      paid: { bg: 'rgba(21,128,61,0.1)', color: '#15803D' },
+      failed: { bg: 'rgba(185,28,28,0.1)', color: '#B91C1C' },
     };
     const c = colors[status] || colors.pending;
     return { display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700, background: c.bg, color: c.color };
   },
   confirmBtn: { padding: '0.3rem 0.85rem', borderRadius: '5px', fontSize: '0.78rem', fontWeight: 600, border: 'none', background: 'rgba(21,128,61,0.1)', color: '#15803D', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s', marginRight: '0.3rem' },
   rejectBtn: { padding: '0.3rem 0.85rem', borderRadius: '5px', fontSize: '0.78rem', fontWeight: 600, border: 'none', background: 'rgba(185,28,28,0.1)', color: '#B91C1C', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' },
+  cancelApproveBtn: { padding: '0.3rem 0.85rem', borderRadius: '5px', fontSize: '0.78rem', fontWeight: 600, border: 'none', background: 'rgba(234,88,12,0.1)', color: '#EA580C', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s', marginRight: '0.3rem' },
+  cancelDenyBtn: { padding: '0.3rem 0.85rem', borderRadius: '5px', fontSize: '0.78rem', fontWeight: 600, border: 'none', background: 'rgba(59,130,246,0.1)', color: '#2563EB', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' },
+  price: { fontFamily: "'Playfair Display', serif", fontWeight: 700, color: '#1C1C1E' },
   empty: { textAlign: 'center', padding: '3rem', color: '#7A7470', fontSize: '0.875rem' },
+  cancelAlert: { display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.2)', borderRadius: '6px', marginBottom: '0.3rem', fontSize: '0.75rem', color: '#EA580C', fontWeight: 500 },
+};
+
+const statusLabel = (status) => {
+  const labels = {
+    pending: 'Pending', confirmed: 'Confirmed', rejected: 'Rejected',
+    completed: 'Completed', cancellation_requested: '⚠️ Cancel Requested', cancelled: 'Cancelled',
+  };
+  return labels[status] || status;
 };
 
 const OwnerAllBookings = () => {
@@ -63,46 +86,110 @@ const OwnerAllBookings = () => {
     } catch (error) { message.error("Failed to update booking status"); }
   };
 
+  const handleCancelApprove = async (bookingId) => {
+    if (!window.confirm("Approve cancellation? This will cancel the booking and free the property.")) return;
+    try {
+      const token = getToken();
+      await axios.delete(`${API_URL}/api/bookings/${bookingId}/cancel`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      message.success("Cancellation approved! Property is now available.");
+      getAllBookings();
+    } catch (error) { message.error("Failed to cancel booking"); }
+  };
+
+  const handleCancelDeny = async (bookingId) => {
+    try {
+      const token = getToken();
+      await axios.put(`${API_URL}/api/bookings/${bookingId}/status`, { status: "confirmed" }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      message.success("Cancellation denied. Booking remains confirmed.");
+      getAllBookings();
+    } catch (error) { message.error("Failed to update status"); }
+  };
+
+  const cancelRequests = allBookings.filter(b => b.status === 'cancellation_requested');
+
   return (
     <div style={S.wrap}>
+      {/* Cancellation Alerts */}
+      {cancelRequests.length > 0 && (
+        <div style={{ marginBottom: '1rem' }}>
+          {cancelRequests.map(b => (
+            <div key={b._id} style={S.cancelAlert}>
+              ⚠️ <strong>{b.tenant}</strong> has requested cancellation for their booking (₹{b.totalAmount?.toLocaleString()}) — scroll down to take action.
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={S.tableWrap}>
         <table style={S.table}>
           <thead style={S.thead}>
             <tr>
-              {['Booking ID', 'Tenant', 'Phone', 'Start Date', 'End Date', 'Rent', 'Status', 'Actions'].map(h => <th key={h} style={S.th}>{h}</th>)}
+              {['Tenant', 'Phone', 'Start', 'End', 'Rent/Mo', 'Total', 'Payment', 'Status', 'Actions'].map(h => <th key={h} style={S.th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {allBookings.length > 0 ? allBookings.map((booking, idx) => (
-              <tr key={booking._id} style={idx % 2 === 0 ? S.trEven : S.trOdd}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(196,98,45,0.04)'}
-                onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? '#FFFCF7' : '#FBF7F2'}>
-                <td style={S.td}><span style={S.idText}>{booking._id}</span></td>
-                <td style={{ ...S.td, fontWeight: 500 }}>{booking.tenant}</td>
-                <td style={{ ...S.td, color: '#7A7470' }}>{booking.tenantPhone}</td>
-                <td style={{ ...S.td, color: '#7A7470' }}>{new Date(booking.bookingStartDate).toLocaleDateString()}</td>
-                <td style={{ ...S.td, color: '#7A7470' }}>{new Date(booking.bookingEndDate).toLocaleDateString()}</td>
-                <td style={S.td}>₹{booking.rentAmount?.toLocaleString()}</td>
-                <td style={S.td}><span style={S.badge(booking.status)}>{booking.status}</span></td>
+            {allBookings.length > 0 ? allBookings.map((b, idx) => (
+              <tr key={b._id} style={{
+                ...(idx % 2 === 0 ? S.trEven : S.trOdd),
+                ...(b.status === 'cancellation_requested' ? { background: 'rgba(234,88,12,0.04)' } : {})
+              }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(196,98,45,0.06)'}
+                onMouseLeave={e => e.currentTarget.style.background = b.status === 'cancellation_requested' ? 'rgba(234,88,12,0.04)' : (idx % 2 === 0 ? '#FFFCF7' : '#FBF7F2')}>
+                <td style={{ ...S.td, fontWeight: 500 }}>{b.tenant}</td>
+                <td style={{ ...S.td, color: '#7A7470' }}>{b.tenantPhone}</td>
+                <td style={{ ...S.td, color: '#7A7470' }}>{new Date(b.bookingStartDate).toLocaleDateString()}</td>
+                <td style={{ ...S.td, color: '#7A7470' }}>{new Date(b.bookingEndDate).toLocaleDateString()}</td>
+                <td style={S.td}><span style={S.price}>₹{b.rentAmount?.toLocaleString()}</span></td>
+                <td style={S.td}><span style={S.price}>₹{b.totalAmount?.toLocaleString()}</span></td>
+                <td style={S.td}><span style={S.payBadge(b.paymentStatus)}>{b.paymentStatus || 'pending'}</span></td>
+                <td style={S.td}><span style={S.badge(b.status)}>{statusLabel(b.status)}</span></td>
                 <td style={S.td}>
-                  {booking.status === "pending" && (
+                  {/* Pending booking: Confirm or Reject */}
+                  {b.status === "pending" && (
                     <>
-                      <button onClick={() => handleStatus(booking._id, "confirmed")} style={S.confirmBtn}
+                      <button onClick={() => handleStatus(b._id, "confirmed")} style={S.confirmBtn}
                         onMouseEnter={e => { e.target.style.background = '#15803D'; e.target.style.color = 'white'; }}
                         onMouseLeave={e => { e.target.style.background = 'rgba(21,128,61,0.1)'; e.target.style.color = '#15803D'; }}>
                         Confirm
                       </button>
-                      <button onClick={() => handleStatus(booking._id, "rejected")} style={S.rejectBtn}
+                      <button onClick={() => handleStatus(b._id, "rejected")} style={S.rejectBtn}
                         onMouseEnter={e => { e.target.style.background = '#B91C1C'; e.target.style.color = 'white'; }}
                         onMouseLeave={e => { e.target.style.background = 'rgba(185,28,28,0.1)'; e.target.style.color = '#B91C1C'; }}>
                         Reject
                       </button>
                     </>
                   )}
+                  {/* Cancellation requested: Approve or Deny */}
+                  {b.status === "cancellation_requested" && (
+                    <>
+                      <button onClick={() => handleCancelApprove(b._id)} style={S.cancelApproveBtn}
+                        onMouseEnter={e => { e.target.style.background = '#EA580C'; e.target.style.color = 'white'; }}
+                        onMouseLeave={e => { e.target.style.background = 'rgba(234,88,12,0.1)'; e.target.style.color = '#EA580C'; }}>
+                        ✓ Approve Cancel
+                      </button>
+                      <button onClick={() => handleCancelDeny(b._id)} style={S.cancelDenyBtn}
+                        onMouseEnter={e => { e.target.style.background = '#2563EB'; e.target.style.color = 'white'; }}
+                        onMouseLeave={e => { e.target.style.background = 'rgba(59,130,246,0.1)'; e.target.style.color = '#2563EB'; }}>
+                        ✗ Deny
+                      </button>
+                    </>
+                  )}
+                  {/* Confirmed: owner can mark completed */}
+                  {b.status === "confirmed" && (
+                    <button onClick={() => handleStatus(b._id, "completed")} style={{ ...S.confirmBtn, background: 'rgba(59,130,246,0.1)', color: '#2563EB' }}
+                      onMouseEnter={e => { e.target.style.background = '#2563EB'; e.target.style.color = 'white'; }}
+                      onMouseLeave={e => { e.target.style.background = 'rgba(59,130,246,0.1)'; e.target.style.color = '#2563EB'; }}>
+                      Mark Complete
+                    </button>
+                  )}
                 </td>
               </tr>
             )) : (
-              <tr><td colSpan={8} style={S.empty}>No bookings available</td></tr>
+              <tr><td colSpan={9} style={S.empty}>No bookings available</td></tr>
             )}
           </tbody>
         </table>

@@ -21,12 +21,38 @@ const S = {
       confirmed: { bg: 'rgba(21,128,61,0.1)', color: '#15803D' },
       rejected: { bg: 'rgba(185,28,28,0.1)', color: '#B91C1C' },
       completed: { bg: 'rgba(59,130,246,0.1)', color: '#2563EB' },
+      cancellation_requested: { bg: 'rgba(234,88,12,0.1)', color: '#EA580C' },
+      cancelled: { bg: 'rgba(107,114,128,0.1)', color: '#6B7280' },
     };
     const c = colors[status] || colors.pending;
     return { display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700, background: c.bg, color: c.color };
   },
+  payBadge: (status) => {
+    const colors = {
+      pending: { bg: 'rgba(180,83,9,0.1)', color: '#B45309' },
+      paid: { bg: 'rgba(21,128,61,0.1)', color: '#15803D' },
+      failed: { bg: 'rgba(185,28,28,0.1)', color: '#B91C1C' },
+    };
+    const c = colors[status] || colors.pending;
+    return { display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700, background: c.bg, color: c.color };
+  },
+  cancelBtn: { padding: '0.3rem 0.85rem', borderRadius: '5px', fontSize: '0.78rem', fontWeight: 600, border: 'none', background: 'rgba(234,88,12,0.1)', color: '#EA580C', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' },
+  disabledLabel: { fontSize: '0.72rem', color: '#7A7470', fontStyle: 'italic' },
+  price: { fontFamily: "'Playfair Display', serif", fontWeight: 700, color: '#1C1C1E' },
   empty: { textAlign: 'center', padding: '3rem', color: '#7A7470', fontSize: '0.875rem' },
   heading: { fontFamily: "'Playfair Display', serif", fontSize: '1.15rem', fontWeight: 700, color: '#1C1C1E', marginBottom: '1rem' },
+};
+
+const statusLabel = (status) => {
+  const labels = {
+    pending: 'Pending',
+    confirmed: 'Confirmed',
+    rejected: 'Rejected',
+    completed: 'Completed',
+    cancellation_requested: 'Cancel Requested',
+    cancelled: 'Cancelled',
+  };
+  return labels[status] || status;
 };
 
 const RenterAllProperty = () => {
@@ -52,6 +78,20 @@ const RenterAllProperty = () => {
     }
   };
 
+  const handleCancelRequest = async (bookingId) => {
+    if (!window.confirm("Are you sure you want to request cancellation? The property owner will review your request.")) return;
+    try {
+      const token = localStorage.getItem("token");
+      await axios.put(`${API_URL}/api/bookings/${bookingId}/status`, { status: "cancellation_requested" }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      showToast("success", "Cancellation request sent to the property owner!");
+      getBookings();
+    } catch (error) {
+      showToast("error", "Failed to send cancellation request");
+    }
+  };
+
   useEffect(() => { getBookings(); }, []);
 
   return (
@@ -62,23 +102,40 @@ const RenterAllProperty = () => {
         <table style={S.table}>
           <thead style={S.thead}>
             <tr>
-              {['Booking ID', 'Property', 'Start Date', 'End Date', 'Rent/Month', 'Status'].map(h => <th key={h} style={S.th}>{h}</th>)}
+              {['Property', 'Start', 'End', 'Rent/Mo', 'Months', 'Total', 'Payment', 'Status', 'Actions'].map(h => <th key={h} style={S.th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {bookings.length > 0 ? bookings.map((booking, index) => (
-              <tr key={booking._id} style={index % 2 === 0 ? S.trEven : S.trOdd}
+            {bookings.length > 0 ? bookings.map((b, i) => (
+              <tr key={b._id} style={i % 2 === 0 ? S.trEven : S.trOdd}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(196,98,45,0.04)'}
-                onMouseLeave={e => e.currentTarget.style.background = index % 2 === 0 ? '#FFFCF7' : '#FBF7F2'}>
-                <td style={S.td}><span style={S.idText}>{booking._id}</span></td>
-                <td style={{ ...S.td, fontWeight: 500 }}>{booking.property?.address || booking.property?._id || 'N/A'}</td>
-                <td style={{ ...S.td, color: '#7A7470' }}>{new Date(booking.bookingStartDate).toLocaleDateString()}</td>
-                <td style={{ ...S.td, color: '#7A7470' }}>{new Date(booking.bookingEndDate).toLocaleDateString()}</td>
-                <td style={S.td}>₹{booking.rentAmount?.toLocaleString()}</td>
-                <td style={S.td}><span style={S.badge(booking.status)}>{booking.status}</span></td>
+                onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#FFFCF7' : '#FBF7F2'}>
+                <td style={{ ...S.td, fontWeight: 500 }}>{b.property?.address || 'N/A'}</td>
+                <td style={{ ...S.td, color: '#7A7470' }}>{new Date(b.bookingStartDate).toLocaleDateString()}</td>
+                <td style={{ ...S.td, color: '#7A7470' }}>{new Date(b.bookingEndDate).toLocaleDateString()}</td>
+                <td style={S.td}><span style={S.price}>₹{b.rentAmount?.toLocaleString()}</span></td>
+                <td style={S.td}>{b.numberOfMonths || '—'}</td>
+                <td style={S.td}><span style={S.price}>₹{b.totalAmount?.toLocaleString()}</span></td>
+                <td style={S.td}><span style={S.payBadge(b.paymentStatus)}>{b.paymentStatus || 'pending'}</span></td>
+                <td style={S.td}><span style={S.badge(b.status)}>{statusLabel(b.status)}</span></td>
+                <td style={S.td}>
+                  {(b.status === "confirmed" || b.status === "pending") && (
+                    <button onClick={() => handleCancelRequest(b._id)} style={S.cancelBtn}
+                      onMouseEnter={e => { e.target.style.background = '#EA580C'; e.target.style.color = 'white'; }}
+                      onMouseLeave={e => { e.target.style.background = 'rgba(234,88,12,0.1)'; e.target.style.color = '#EA580C'; }}>
+                      Request Cancel
+                    </button>
+                  )}
+                  {b.status === "cancellation_requested" && (
+                    <span style={S.disabledLabel}>⏳ Awaiting owner</span>
+                  )}
+                  {(b.status === "cancelled" || b.status === "rejected") && (
+                    <span style={S.disabledLabel}>—</span>
+                  )}
+                </td>
               </tr>
             )) : (
-              <tr><td colSpan="6" style={S.empty}>No bookings found.</td></tr>
+              <tr><td colSpan="9" style={S.empty}>No bookings found. Browse properties to make your first booking!</td></tr>
             )}
           </tbody>
         </table>
